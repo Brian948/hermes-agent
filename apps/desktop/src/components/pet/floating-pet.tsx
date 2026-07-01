@@ -13,6 +13,7 @@ import { isSecondaryWindow } from '@/store/windows'
 import { useTheme } from '@/themes/context'
 
 import { PetSprite, roamWalkRow } from './pet-sprite'
+import { JarvisOrb } from './jarvis-orb'
 import { usePetRoam } from './use-pet-roam'
 import { type PetZoomAnchor, usePetZoomGesture } from './use-pet-zoom-gesture'
 
@@ -102,7 +103,7 @@ const PET_ACTIVE_REFRESH_MS = 15000
 
 export function FloatingPet() {
   const { requestGateway } = useGatewayRequest()
-  const { resolvedMode } = useTheme()
+  const { resolvedMode, themeName } = useTheme()
   const gatewayState = useStore($gatewayState)
   const info = useStore($petInfo)
   const overlayActive = useStore($petOverlayActive)
@@ -231,6 +232,34 @@ export function FloatingPet() {
     }
 
     return initPetOverlayBridge()
+  }, [])
+
+  // JARVIS: when the main window is minimized/closed to tray, the main process
+  // sends 'hermes:jarvis:pop-orb'. We auto-pop the orb overlay so the user
+  // always sees Jarvis floating on the desktop. Only fires when a pet is active
+  // and the overlay isn't already open.
+  useEffect(() => {
+    if (isSecondaryWindow()) {
+      return
+    }
+
+    const off = window.hermesDesktop?.onJarvisPopOrb?.(() => {
+      const info = $petInfo.get()
+      const overlayActive = $petOverlayActive.get()
+
+      if (!info.enabled || !info.spritesheetBase64 || overlayActive) {
+        return
+      }
+
+      // Pop out from a sensible default position (lower-right of the viewport).
+      const w = window.innerWidth || 1280
+      const h = window.innerHeight || 720
+      const size = 220
+
+      popOutPet({ height: size, width: size, x: w - size - 40, y: h - size - 40 })
+    })
+
+    return off
   }, [])
 
   // Returning to the app (by any route, not just the mail icon) clears the pet's
@@ -448,7 +477,7 @@ export function FloatingPet() {
           zIndex: 1
         }}
       >
-        <PetSprite info={info} rowOverride={walk.row} />
+        {themeName.startsWith('jarvis') ? <JarvisOrb info={info} rowOverride={walk.row} /> : <PetSprite info={info} rowOverride={walk.row} />}
       </div>
     </div>
   )

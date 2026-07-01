@@ -2,12 +2,14 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { PetBubble } from '@/components/pet/pet-bubble'
+import { JarvisOrb } from '@/components/pet/jarvis-orb'
 import { PetSprite } from '@/components/pet/pet-sprite'
 import { type PetZoomAnchor, usePetZoomGesture } from '@/components/pet/use-pet-zoom-gesture'
 import { Mail } from '@/lib/icons'
 import { $petActivity, $petInfo, setPetInfo } from '@/store/pet'
 import { overlayWindowSize } from '@/store/pet-overlay'
 import { setAwaitingResponse, setBusy } from '@/store/session'
+import { useTheme } from '@/themes/context'
 
 // Fallbacks mirror pet-sprite's defaults; the gateway normally sends real values.
 const DEFAULT_FRAME_W = 192
@@ -61,6 +63,7 @@ interface DragState {
 
 export function PetOverlayApp() {
   const info = useStore($petInfo)
+  const { themeName } = useTheme()
   const [composerOpen, setComposerOpen] = useState(false)
   const [draft, setDraft] = useState('')
   // Mirrored from the main renderer: a finish landed while you were away.
@@ -414,7 +417,7 @@ export function PetOverlayApp() {
           <PetBubble />
         </div>
         <div style={{ lineHeight: 0, position: 'relative' }}>
-          <PetSprite info={info} />
+          {themeName.startsWith('jarvis') ? <JarvisOrb info={info} /> : <PetSprite info={info} />}
 
           {/* Mail icon: only when a finish landed while you were away. Jumps to
               the app's most recent thread. Anchored to the sprite (kept inside

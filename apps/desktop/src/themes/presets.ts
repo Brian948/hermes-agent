@@ -204,6 +204,47 @@ export const monoTheme: DesktopTheme = {
   }
 }
 
+/**
+ * JARVIS — Futuristic HUD. Cyan glow on deep-space dark.
+ * Inspired by Iron Man's AI assistant with a sci-fi aesthetic.
+ */
+export const jarvisTheme: DesktopTheme = {
+  name: 'jarvis',
+  label: 'JARVIS',
+  description: 'Futuristic HUD — cyan glow on deep-space dark',
+  colors: {
+    background: '#060612',
+    foreground: '#c0d8ff',
+    card: '#0a0a20',
+    cardForeground: '#c0d8ff',
+    muted: '#0d0d2a',
+    mutedForeground: '#4a6a9a',
+    popover: '#0c0c28',
+    popoverForeground: '#c0d8ff',
+    primary: '#00d4ff',
+    primaryForeground: '#060612',
+    secondary: '#141440',
+    secondaryForeground: '#80b0e0',
+    accent: '#003050',
+    accentForeground: '#00d4ff',
+    border: '#1a2040',
+    input: '#0e1530',
+    ring: '#00d4ff',
+    midground: '#00d4ff',
+    composerRing: '#00d4ff',
+    destructive: '#ff2040',
+    destructiveForeground: '#ffffff',
+    sidebarBackground: '#040410',
+    sidebarBorder: '#101830',
+    userBubble: '#081830',
+    userBubbleBorder: '#0a2050'
+  },
+  typography: {
+    fontMono: `"Orbitron", "JetBrains Mono", ${SYSTEM_MONO}`,
+    fontUrl: 'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&display=swap'
+  }
+}
+
 /** Neon green on black. Matches the CLI cyberpunk skin and dashboard theme. */
 export const cyberpunkTheme: DesktopTheme = {
   name: 'cyberpunk',
@@ -283,7 +324,8 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
   ember: emberTheme,
   mono: monoTheme,
   cyberpunk: cyberpunkTheme,
-  slate: slateTheme
+  slate: slateTheme,
+  jarvis: jarvisTheme
 }
 
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)

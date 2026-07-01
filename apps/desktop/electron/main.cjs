@@ -3,6 +3,7 @@ const {
   BrowserWindow,
   Menu,
   Notification,
+  Tray,
   clipboard,
   dialog,
   ipcMain,
@@ -760,6 +761,10 @@ function registerMediaProtocol() {
 let mainWindow = null
 let hermesProcess = null
 let connectionPromise = null
+// JARVIS system tray: keeps Hermes running in the background when the main
+// window is closed/minimized, with a quick way to reopen it.
+let jarvisTray = null
+let isQuittingFromTray = false
 // Additional per-profile backends, keyed by profile name. The PRIMARY backend
 // (the desktop's launch profile) stays managed by hermesProcess +
 // connectionPromise + startHermes(); this pool only holds EXTRA profile
@@ -7518,6 +7523,97 @@ app.on('open-url', (event, url) => {
   handleDeepLink(url)
 })
 
+// ─── JARVIS system tray ────────────────────────────────────────────────────
+// Keeps Hermes alive in the background when the window is closed/minimized.
+// "Quit" is the only path that truly exits; closing the window hides it.
+// macOS already has the Dock for this, so the tray is Windows/Linux only.
+function buildJarvisTrayMenu() {
+  return Menu.buildFromTemplate([
+    {
+      label: 'Abrir Hermes',
+      click: () => showMainWindowFromTray()
+    },
+    { type: 'separator' },
+    {
+      label: 'Salir',
+      click: () => quitFromTray()
+    }
+  ])
+}
+
+function showMainWindowFromTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+
+  mainWindow.show()
+  focusWindow(mainWindow)
+}
+
+function quitFromTray() {
+  isQuittingFromTray = true
+  app.quit()
+}
+
+function createJarvisTray() {
+  // macOS uses the Dock for background presence — no tray needed there.
+  if (IS_MAC) {
+    return
+  }
+
+  const iconPath = getAppIconPath()
+
+  if (!iconPath) {
+    return
+  }
+
+  let trayImage = nativeImage.createFromPath(iconPath)
+  const size = process.platform === 'win32' ? 16 : 22
+
+  if (!trayImage.isEmpty()) {
+    trayImage = trayImage.resize({ width: size, height: size })
+  }
+
+  jarvisTray = new Tray(trayImage)
+  jarvisTray.setToolTip('Hermes')
+  jarvisTray.setContextMenu(buildJarvisTrayMenu())
+
+  // Single click also opens the window (Windows convention).
+  jarvisTray.on('click', () => showMainWindowFromTray())
+}
+
+// Intercept the close button so the window hides to the tray instead of
+// quitting — the user explicitly chose "Quit" from the tray menu to exit.
+function installJarvisMinimizeToTray() {
+  if (IS_MAC || !mainWindow) {
+    return
+  }
+
+  mainWindow.on('close', event => {
+    // A real quit (tray "Salir" or app.quit()) sets the flag — let it through.
+    if (isQuittingFromTray) {
+      return
+    }
+
+    event.preventDefault()
+    // Tell the renderer to pop the orb overlay before hiding, so the user
+    // always sees Jarvis floating on the desktop.
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('hermes:jarvis:pop-orb')
+    }
+    mainWindow.hide()
+  })
+
+  mainWindow.on('minimize', () => {
+    // Minimize also hides to tray so the orb stays as the only visible surface.
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('hermes:jarvis:pop-orb')
+    }
+    mainWindow.hide()
+  })
+}
+
 app.whenReady().then(() => {
   if (IS_MAC) {
     Menu.setApplicationMenu(buildApplicationMenu())
@@ -7532,6 +7628,10 @@ app.whenReady().then(() => {
   configureSpellChecker()
   registerPowerResumeListeners()
   createWindow()
+
+  // JARVIS: create the system tray + minimize-to-tray behavior (Windows/Linux).
+  createJarvisTray()
+  installJarvisMinimizeToTray()
 
   // Win/Linux cold start: the launching hermes:// URL is in our own argv.
   const _coldStartLink = _extractDeepLink(process.argv)

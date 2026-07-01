@@ -34,6 +34,13 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     }
   },
   getBootProgress: () => ipcRenderer.invoke('hermes:boot-progress:get'),
+  // JARVIS: main process tells the renderer to pop the orb overlay when the
+  // window is minimized/closed to tray.
+  onJarvisPopOrb: callback => {
+    const listener = () => callback()
+    ipcRenderer.on('hermes:jarvis:pop-orb', listener)
+    return () => ipcRenderer.removeListener('hermes:jarvis:pop-orb', listener)
+  },
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),
   saveConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:save', payload),
   applyConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:apply', payload),

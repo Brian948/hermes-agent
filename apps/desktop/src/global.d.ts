@@ -48,6 +48,9 @@ declare global {
         onControl: (callback: (payload: PetOverlayControl) => void) => () => void
       }
       getBootProgress: () => Promise<DesktopBootProgress>
+      // JARVIS: main process tells the renderer to pop the orb overlay when the
+      // window is minimized/closed to tray.
+      onJarvisPopOrb?: (callback: () => void) => () => void
       getConnectionConfig: (profile?: null | string) => Promise<DesktopConnectionConfig>
       saveConnectionConfig: (payload: DesktopConnectionConfigInput) => Promise<DesktopConnectionConfig>
       applyConnectionConfig: (payload: DesktopConnectionConfigInput) => Promise<DesktopConnectionConfig>
