@@ -867,7 +867,11 @@ export function speakText(text: string): Promise<AudioSpeakResponse> {
   return window.hermesDesktop.api<AudioSpeakResponse>({
     path: '/api/audio/speak',
     method: 'POST',
-    body: { text }
+    body: { text },
+    // JARVIS: Gemini TTS on long text can take 20-40s to generate. The default
+    // 15s backend timeout cuts it off and surfaces as "voice playback failed".
+    // TTS is the one call where waiting longer is correct — give it 60s.
+    timeoutMs: 60_000
   })
 }
 

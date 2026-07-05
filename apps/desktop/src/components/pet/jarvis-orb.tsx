@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react'
 
 import { $petState, type PetInfo, type PetState } from '@/store/pet'
+import { $voiceStatus, type JarvisVoiceStatus } from '@/store/voice-status'
 
 const DEFAULT_SCALE = 0.33
 const DEFAULT_ORB_SIZE = 120
@@ -19,6 +20,17 @@ const STATE_MAP: Record<PetState, OrbState> = {
   failed: 'error',
   review: 'active',
   waiting: 'waiting'
+}
+
+/**
+ * Voice status → orb visual state. Voice takes priority over pet activity so
+ * the orb always reflects what's happening in a voice conversation.
+ */
+const VOICE_MAP: Record<JarvisVoiceStatus, OrbState> = {
+  idle: 'idle',
+  listening: 'listening',
+  thinking: 'active',
+  speaking: 'listening'
 }
 
 interface OrbConfig {
@@ -72,15 +84,30 @@ function JarvisOrbImpl({ info, zoom = 1, stateOverride }: JarvisOrbProps) {
   const scale = (info.scale ?? DEFAULT_SCALE) * zoom
   const size = Math.round(DEFAULT_ORB_SIZE * scale)
 
-  // Resolve orb visual state from pet state (same subscription as PetSprite)
-  useEffect(() => {
-    stateRef.current = STATE_MAP[$petState.get()]
+  // Resolve orb visual state. Voice status takes priority over pet activity —
+  // the orb always reflects what's happening in a voice conversation.
+  const resolveState = (): OrbState => {
+    const voice = $voiceStatus.get()
+    if (voice !== 'idle') {
+      return VOICE_MAP[voice]
+    }
+    return STATE_MAP[$petState.get()]
+  }
 
-    const unsub = $petState.listen(next => {
-      stateRef.current = STATE_MAP[next]
+  useEffect(() => {
+    stateRef.current = resolveState()
+
+    const unsubPet = $petState.listen(() => {
+      stateRef.current = resolveState()
+    })
+    const unsubVoice = $voiceStatus.listen(() => {
+      stateRef.current = resolveState()
     })
 
-    return unsub
+    return () => {
+      unsubPet()
+      unsubVoice()
+    }
   }, [])
 
   // Initialize particles

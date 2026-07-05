@@ -6113,6 +6113,28 @@ ipcMain.handle('hermes:pet-overlay:close', async () => {
 
   return { ok: true }
 })
+
+// JARVIS: signal that JARVIS is currently speaking (TTS active). The daemon
+// raises its sensitivity threshold during this window so the user can still
+// barge-in with a loud "ALEXA!" while the quieter TTS voice from the speakers
+// is ignored (acoustic echo guard, without fully blocking the wake word).
+const JARVIS_DAEMON_DIR = path.join(__dirname, '..', 'jarvis-daemon')
+const JARVIS_TTS_ACTIVE_SIGNAL = path.join(JARVIS_DAEMON_DIR, 'tts_active.signal')
+ipcMain.on('hermes:jarvis:tts-mute', (_event, muted) => {
+  try {
+    if (muted) {
+      if (!fs.existsSync(JARVIS_TTS_ACTIVE_SIGNAL)) {
+        fs.writeFileSync(JARVIS_TTS_ACTIVE_SIGNAL, String(Date.now()))
+      }
+    } else {
+      if (fs.existsSync(JARVIS_TTS_ACTIVE_SIGNAL)) {
+        fs.unlinkSync(JARVIS_TTS_ACTIVE_SIGNAL)
+      }
+    }
+  } catch {
+    // Best-effort — the daemon has its own cooldown + raised threshold.
+  }
+})
 // Drag/resize: the overlay reports new absolute screen bounds (it already knows
 // the pointer's screen coords). Drag keeps the size constant; the wheel-to-scale
 // gesture grows/shrinks it so the sprite is never cropped by the window edge.

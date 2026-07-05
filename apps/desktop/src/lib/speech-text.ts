@@ -20,7 +20,7 @@ function normalizeLineBreaks(text: string): string {
 }
 
 export function sanitizeTextForSpeech(text: string): string {
-  return normalizeLineBreaks(text)
+  const cleaned = normalizeLineBreaks(text)
     .replace(FENCED_CODE_RE, ' ')
     .replace(THINKING_PREFIX_RE, ' ')
     .replace(MARKDOWN_LINK_RE, '$1')
@@ -32,4 +32,42 @@ export function sanitizeTextForSpeech(text: string): string {
     .replace(/^\s*[-+*]\s+/gm, '')
     .replace(/\s+/g, ' ')
     .trim()
+
+  // JARVIS: cap spoken length to avoid TTS backend timeouts. A butler speaks
+  // concisely. Gemini/Edge TTS can take 15s+ on a paragraph; we cap at ~200
+  // chars (≈2 spoken sentences) and cut at the last sentence boundary so the
+  // audio never stops mid-phrase. The full response still shows in the chat.
+  return capForSpeech(cleaned)
+}
+
+// JARVIS: cap spoken length to avoid TTS backend timeouts. A butler speaks
+// concisely. Gemini TTS generates at ~28 chars/sec (per community benchmarks),
+// so 1400 chars fits comfortably in the 60s backend timeout we set for TTS.
+// Only extremely long responses (full essays) get cut at the last sentence
+// boundary — the full text always remains visible in the chat.
+const MAX_SPEECH_CHARS = 1400
+
+function capForSpeech(text: string): string {
+  if (text.length <= MAX_SPEECH_CHARS) {
+    return text
+  }
+
+  const truncated = text.slice(0, MAX_SPEECH_CHARS)
+  // Find the last sentence boundary (. ! ?) with at least ~40 chars before it,
+  // so we keep at least one full sentence and don't cut too early.
+  const boundary = Math.max(
+    truncated.lastIndexOf('. '),
+    truncated.lastIndexOf('! '),
+    truncated.lastIndexOf('? '),
+    truncated.lastIndexOf('.'),
+    truncated.lastIndexOf('!'),
+    truncated.lastIndexOf('?')
+  )
+
+  if (boundary >= 40) {
+    return truncated.slice(0, boundary + 1).trim()
+  }
+
+  // No good sentence boundary — fall back to the hard cap.
+  return truncated.trim()
 }

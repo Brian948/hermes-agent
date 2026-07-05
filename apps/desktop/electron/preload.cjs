@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     ipcRenderer.on('hermes:jarvis:pop-orb', listener)
     return () => ipcRenderer.removeListener('hermes:jarvis:pop-orb', listener)
   },
+  // JARVIS: toggle the wake-word mute signal while JARVIS is speaking so the
+  // daemon ignores its own TTS voice (acoustic echo guard).
+  setJarvisTtsMute: muted => ipcRenderer.send('hermes:jarvis:tts-mute', muted),
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),
   saveConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:save', payload),
   applyConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:apply', payload),

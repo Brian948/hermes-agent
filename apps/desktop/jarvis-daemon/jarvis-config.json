@@ -1,0 +1,10 @@
+{
+  "wake_word": "alexa",
+  "sensitivity": 0.4,
+  "cooldown_seconds": 2,
+  "desktop_port": 5174,
+  "log_detection": true,
+  "log_scores": true,
+  "mic_gain": 1.5,
+  "custom_model_path": ""
+}

@@ -3,6 +3,7 @@ import { atom } from 'nanostores'
 import { persistBoolean, persistString, storedBoolean, storedString } from '@/lib/storage'
 import { $petActivity, $petInfo, $petUnread, clearPetUnread, type PetActivity, type PetInfo } from '@/store/pet'
 import { $awaitingResponse, $busy } from '@/store/session'
+import { $voiceStatus, type JarvisVoiceStatus } from '@/store/voice-status'
 
 /**
  * Controller for the pop-out pet overlay (main-renderer side).
@@ -46,6 +47,8 @@ export interface PetOverlayStatePayload {
   awaiting: boolean
   /** Drives the overlay's mail icon: a finish landed while you were away. */
   unread: boolean
+  /** JARVIS: live voice status so the floating orb reacts to speech. */
+  voice?: JarvisVoiceStatus
 }
 
 export type PetOverlayControl =
@@ -129,7 +132,8 @@ function currentPayload(): PetOverlayStatePayload {
     activity: $petActivity.get(),
     busy: $busy.get(),
     awaiting: $awaitingResponse.get(),
-    unread: $petUnread.get()
+    unread: $petUnread.get(),
+    voice: $voiceStatus.get()
   }
 }
 
@@ -165,7 +169,8 @@ function openOverlay(request: PetOverlayOpenRequest): void {
     $petActivity.subscribe(pushNow),
     $busy.subscribe(pushNow),
     $awaitingResponse.subscribe(pushNow),
-    $petUnread.subscribe(pushNow)
+    $petUnread.subscribe(pushNow),
+    $voiceStatus.subscribe(pushNow)
   ]
 }
 

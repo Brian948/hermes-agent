@@ -56,6 +56,8 @@ export function stopVoicePlayback() {
     source: null,
     status: 'idle'
   })
+  // JARVIS: ensure the wake word is unmuted when playback is force-stopped.
+  window.hermesDesktop?.setJarvisTtsMute?.(false)
 }
 
 export async function playSpeechText(text: string, options: VoicePlaybackOptions): Promise<boolean> {
@@ -82,6 +84,9 @@ export async function playSpeechText(text: string, options: VoicePlaybackOptions
     const audio = new Audio(response.data_url)
     currentAudio = audio
     setVoicePlaybackState(currentState('speaking', options, audio))
+    // JARVIS: mute the wake word while we speak so the agent's own voice can't
+    // trigger a false wake (acoustic echo guard). Unmuted on cleanup below.
+    window.hermesDesktop?.setJarvisTtsMute?.(true)
 
     await new Promise<void>((resolve, reject) => {
       let stall: number | null = null
@@ -96,6 +101,8 @@ export async function playSpeechText(text: string, options: VoicePlaybackOptions
         audio.removeEventListener('error', onError)
         audio.removeEventListener('timeupdate', armStall)
         currentStop = null
+        // JARVIS: unmute the wake word now that we're done speaking.
+        window.hermesDesktop?.setJarvisTtsMute?.(false)
       }
 
       const armStall = () => {

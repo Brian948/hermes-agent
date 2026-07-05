@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useI18n } from '@/i18n'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
 import { notify, notifyError } from '@/store/notifications'
+import { setConversationStatus, type JarvisVoiceStatus } from '@/store/voice-status'
 
 import { useMicRecorder } from './use-mic-recorder'
 
@@ -67,6 +68,19 @@ export function useVoiceConversation({
     statusRef.current = status
   }, [status])
 
+  // JARVIS: mirror the conversation status into the unified voice store so the
+  // floating orb can react. Map the hook's 5 states to the orb's 4.
+  useEffect(() => {
+    const map: Record<ConversationStatus, JarvisVoiceStatus> = {
+      idle: 'idle',
+      listening: 'listening',
+      transcribing: 'thinking',
+      thinking: 'thinking',
+      speaking: 'speaking'
+    }
+    setConversationStatus(map[status])
+  }, [status])
+
   const clearTurnTimeout = () => {
     if (turnTimeoutRef.current) {
       window.clearTimeout(turnTimeoutRef.current)
@@ -97,23 +111,39 @@ export function useVoiceConversation({
       return null
     }
 
-    const sentence = buffer.match(/^(.+?[.!?。！？])(?:\s+|$)/)
-
-    if (sentence?.[1] && (sentence[1].length >= 8 || force)) {
-      const chunk = sentence[1].trim()
-      speechBufferRef.current = buffer.slice(sentence[1].length).trim()
-
-      return chunk
+    // JARVIS: accumulate more text before speaking to reduce TTS pauses.
+    // Original Hermes cut at >= 8 chars, causing "hola... [pause] ...cómo estás".
+    // Now we wait for a larger chunk (>= 40 chars) so the TTS generates longer,
+    // more natural phrases. Multiple short sentences get joined into one call.
+    const sentences: string[] = []
+    let remaining = buffer
+    while (sentences.length < 3) {
+      const match = remaining.match(/^(.+?[.!?。！？])(?:\s+|$)/)
+      if (!match) {
+        break
+      }
+      sentences.push(match[1].trim())
+      remaining = remaining.slice(match[1].length).trim()
     }
 
-    if (!force && buffer.length > 220) {
+    // Speak when we have enough accumulated text, or when forced (stream ended).
+    const joined = sentences.join(' ')
+    if ((joined.length >= 40 || force) && sentences.length > 0) {
+      speechBufferRef.current = remaining
+      return joined
+    }
+
+    // Fallback: if buffer is very long without sentence boundaries, cut at a
+    // soft boundary (comma/semicolon) — but at a higher threshold than before
+    // to avoid tiny chunks.
+    if (!force && buffer.length > 350) {
       const softBoundary = Math.max(
-        buffer.lastIndexOf(', ', 180),
-        buffer.lastIndexOf('; ', 180),
-        buffer.lastIndexOf(': ', 180)
+        buffer.lastIndexOf(', ', 280),
+        buffer.lastIndexOf('; ', 280),
+        buffer.lastIndexOf(': ', 280)
       )
 
-      if (softBoundary > 80) {
+      if (softBoundary > 120) {
         const chunk = buffer.slice(0, softBoundary + 1).trim()
         speechBufferRef.current = buffer.slice(softBoundary + 1).trim()
 
@@ -199,16 +229,35 @@ export function useVoiceConversation({
 
     try {
       // VAD tuning mirrors `tools.voice_mode` defaults so the browser loop matches the CLI.
+      // JARVIS: idleSilenceMs reduced to 4s so the mic closes after 4s of total
+      // silence (instead of the default 12s). Combined with the onIdleTimeout
+      // handler below, this ends the conversation when the user stops talking —
+      // the external OpenWakeWord daemon re-arms it on the next "hey jarvis".
+      // silenceLevel raised to 0.12 so room ambience/fan noise doesn't keep the
+      // mic open indefinitely after the user stops speaking.
       await handle.start({
-        silenceLevel: 0.075,
-        silenceMs: 1_250,
-        idleSilenceMs: 12_000,
+        silenceLevel: 0.09,
+        silenceMs: 3000,
+        idleSilenceMs: 2_000,
         onError: error => {
           notifyError(error, voiceCopy.microphoneFailed)
           pendingStartRef.current = false
           onFatalError?.()
         },
-        onSilence: () => void handleTurn()
+        onSilence: () => void handleTurn(),
+        // JARVIS: when the user never speaks for the whole idle window, close
+        // the mic and turn voice mode OFF. The wake-word daemon will turn it
+        // back on. This is the "movie style" behavior — silence ends the session.
+        onIdleTimeout: () => {
+          handle.cancel()
+          pendingStartRef.current = false
+          awaitingSpokenResponseRef.current = false
+          resetSpeechBuffer()
+          consumePendingResponse()
+          setStatus('idle')
+          // Signal the parent to flip voice mode off.
+          onFatalError?.()
+        }
       })
       setStatus('listening')
       turnTimeoutRef.current = window.setTimeout(() => void handleTurn(), 60_000)
@@ -232,12 +281,25 @@ export function useVoiceConversation({
         if (enabledRef.current) {
           pendingStartRef.current = true
           setStatus('idle')
+          // JARVIS: force the listening loop to restart ~1.5s after the TTS
+          // ends, even if `busy` is still true (the backend sometimes lags a
+          // few seconds flipping busy off after a turn completes, which made
+          // the mic sit silent for ~5s before re-arming). 1.5s is short enough
+          // to feel instant and long enough to clear the TTS tail/echo.
+          if (turnTimeoutRef.current) {
+            window.clearTimeout(turnTimeoutRef.current)
+          }
+          turnTimeoutRef.current = window.setTimeout(() => {
+            if (enabledRef.current && !mutedRef.current && statusRef.current === 'idle') {
+              void startListening()
+            }
+          }, 1500)
         } else {
           setStatus('idle')
         }
       }
     },
-    [voiceCopy.playbackFailed]
+    [voiceCopy.playbackFailed, startListening]
   )
 
   const start = useCallback(async () => {
@@ -346,15 +408,23 @@ export function useVoiceConversation({
           spokenSourceLengthRef.current = response.text.length
         }
 
-        const chunk = takeSpeechChunk(!response.pending && !busy)
+        // JARVIS: wait for the FULL response before speaking. This eliminates
+        // all mid-sentence TTS pauses — one single TTS call, natural prosody.
+        // Trade-off: a longer initial silence before JARVIS starts talking,
+        // but the voice sounds fluid and human instead of choppy.
+        const responseComplete = !response.pending && !busy
 
-        if (chunk) {
-          void speak(chunk)
+        if (responseComplete) {
+          // Speak everything that accumulated, in one shot.
+          const fullText = speechBufferRef.current.replace(/\s+/g, ' ').trim()
 
-          return
-        }
+          if (fullText) {
+            speechBufferRef.current = ''
+            void speak(fullText)
+            return
+          }
 
-        if (!response.pending && !busy) {
+          // No text to speak — go back to listening.
           awaitingSpokenResponseRef.current = false
           consumePendingResponse()
           resetSpeechBuffer()
@@ -363,6 +433,9 @@ export function useVoiceConversation({
 
           return
         }
+
+        // Response still streaming — keep buffering, don't speak yet.
+        return
       }
 
       if (!busy && status === 'thinking') {

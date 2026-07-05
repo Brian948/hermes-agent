@@ -6,6 +6,10 @@ export interface MicRecorderOptions {
   onLevel?: (level: number) => void
   onError?: (error: Error) => void
   onSilence?: () => void
+  /** Fired when the user never spoke for the whole `idleSilenceMs` window.
+   *  Distinct from `onSilence` (which fires after the user spoke then paused).
+   *  Used by the JARVIS loop to close the mic until the wake word fires again. */
+  onIdleTimeout?: () => void
   silenceLevel?: number
   silenceMs?: number
   idleSilenceMs?: number
@@ -109,11 +113,19 @@ export function useMicRecorder(copy: MicRecorderErrorCopy): {
       const analyser = audioContext.createAnalyser()
       const source = audioContext.createMediaStreamSource(stream)
 
-      analyser.fftSize = 256
+      analyser.fftSize = 1024
       const data = new Uint8Array(analyser.fftSize)
 
       source.connect(analyser)
       audioContextRef.current = audioContext
+
+      // JARVIS: rolling RMS buffer. Instead of judging "is the user speaking?"
+      // from a single ~22ms frame (which flips on/off with every mic blip and
+      // causes the inconsistent silence behavior), we average the RMS over a
+      // ~500ms sliding window. A burst of fan noise no longer counts as speech,
+      // and a single quiet sample no longer counts as silence.
+      const WINDOW_FRAMES = 24 // ~500 ms at requestAnimationFrame (60fps / 2)
+      const rmsHistory: number[] = []
 
       const tick = () => {
         analyser.getByteTimeDomainData(data)
@@ -132,12 +144,30 @@ export function useMicRecorder(copy: MicRecorderErrorCopy): {
         setLevel(normalized)
         options.onLevel?.(normalized)
 
-        const speechThreshold = options.silenceLevel ?? 0
+        if (silenceTriggeredRef.current) {
+          animationRef.current = window.requestAnimationFrame(tick)
+          return
+        }
+
+        // Update the rolling window and use the AVERAGE RMS as the speech
+        // signal. This smooths out frame-to-frame jitter.
+        rmsHistory.push(normalized)
+        if (rmsHistory.length > WINDOW_FRAMES) {
+          rmsHistory.shift()
+        }
+        const avgRms = rmsHistory.reduce((a, b) => a + b, 0) / rmsHistory.length
+
+        // The per-frame threshold below is calibrated so the 500 ms average
+        // clears ~0.04 when the room is quiet. Anything above ~0.05 means
+        // real speech in the window.
+        const speechThreshold = 0.05
+        const heardNow = avgRms >= speechThreshold
+
         const silenceMs = options.silenceMs ?? 0
         const idleSilenceMs = options.idleSilenceMs ?? 0
 
         if (speechThreshold > 0 && options.onSilence && !silenceTriggeredRef.current) {
-          if (normalized >= speechThreshold) {
+          if (heardNow) {
             heardSpeechRef.current = true
             silenceStartedAtRef.current = null
           } else if (heardSpeechRef.current && silenceMs > 0) {
@@ -151,7 +181,15 @@ export function useMicRecorder(copy: MicRecorderErrorCopy): {
             }
           } else if (!heardSpeechRef.current && idleSilenceMs > 0 && now - startedAtRef.current >= idleSilenceMs) {
             silenceTriggeredRef.current = true
-            options.onSilence()
+            // Distinguish "user finished a phrase" (onSilence) from "user never
+            // spoke at all for the idle window" (onIdleTimeout). The JARVIS
+            // voice loop uses the latter to close the mic until the wake word
+            // fires again — the "movie style" behavior.
+            if (options.onIdleTimeout) {
+              options.onIdleTimeout()
+            } else {
+              options.onSilence()
+            }
 
             return
           }

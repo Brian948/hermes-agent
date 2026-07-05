@@ -5,6 +5,7 @@ import { useSyncExternalStore } from 'react'
 import { NotificationStack } from '@/components/notifications'
 import { PaneShell } from '@/components/pane-shell'
 import { FloatingPet } from '@/components/pet/floating-pet'
+import { useJarvisWakeBridge } from '@/app/jarvis/jarvis-wake-bridge'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import {
@@ -86,6 +87,11 @@ export function AppShell({
   // pop-out) is a compact side panel — none of them carry the full titlebar
   // tool cluster. Gate on isSecondaryWindow, never the narrower new-session flag.
   const hideTitlebarControls = isSecondaryWindow()
+
+  // JARVIS: listen for wake-word detections from the external daemon. Only
+  // in the primary window, which owns the voice conversation state.
+  useJarvisWakeBridge({ enabled: !hideTitlebarControls })
+
   const titlebarControls = titlebarControlsPosition(connection?.windowButtonPosition, isFullscreen)
   // Width Windows/WSLg reserve for the native min/max/close overlay (zero on
   // macOS, where window controls sit on the left and are reported via

@@ -51,6 +51,9 @@ declare global {
       // JARVIS: main process tells the renderer to pop the orb overlay when the
       // window is minimized/closed to tray.
       onJarvisPopOrb?: (callback: () => void) => () => void
+      // JARVIS: toggle the wake-word mute signal while JARVIS is speaking so the
+      // daemon ignores its own TTS voice (acoustic echo guard).
+      setJarvisTtsMute?: (muted: boolean) => void
       getConnectionConfig: (profile?: null | string) => Promise<DesktopConnectionConfig>
       saveConnectionConfig: (payload: DesktopConnectionConfigInput) => Promise<DesktopConnectionConfig>
       applyConnectionConfig: (payload: DesktopConnectionConfigInput) => Promise<DesktopConnectionConfig>

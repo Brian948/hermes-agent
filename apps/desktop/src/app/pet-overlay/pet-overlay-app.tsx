@@ -9,6 +9,7 @@ import { Mail } from '@/lib/icons'
 import { $petActivity, $petInfo, setPetInfo } from '@/store/pet'
 import { overlayWindowSize } from '@/store/pet-overlay'
 import { setAwaitingResponse, setBusy } from '@/store/session'
+import { $voiceStatus } from '@/store/voice-status'
 import { useTheme } from '@/themes/context'
 
 // Fallbacks mirror pet-sprite's defaults; the gateway normally sends real values.
@@ -94,6 +95,10 @@ export function PetOverlayApp() {
       setBusy(Boolean(payload.busy))
       setAwaitingResponse(Boolean(payload.awaiting))
       setUnread(Boolean(payload.unread))
+      // JARVIS: mirror voice status so the floating orb reacts to speech.
+      if (payload.voice) {
+        $voiceStatus.set(payload.voice)
+      }
     })
 
     // Tell the main renderer we're mounted so it pushes the current frame (the
