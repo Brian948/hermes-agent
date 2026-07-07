@@ -6114,25 +6114,24 @@ ipcMain.handle('hermes:pet-overlay:close', async () => {
   return { ok: true }
 })
 
-// JARVIS: signal that JARVIS is currently speaking (TTS active). The daemon
-// raises its sensitivity threshold during this window so the user can still
-// barge-in with a loud "ALEXA!" while the quieter TTS voice from the speakers
-// is ignored (acoustic echo guard, without fully blocking the wake word).
+// JARVIS: mute the wake word while JARVIS is speaking (TTS) so the agent's
+// own voice AND any audio it plays can't trigger a false wake. The daemon
+// watches for the presence of tts_mute.signal next to itself.
 const JARVIS_DAEMON_DIR = path.join(__dirname, '..', 'jarvis-daemon')
-const JARVIS_TTS_ACTIVE_SIGNAL = path.join(JARVIS_DAEMON_DIR, 'tts_active.signal')
+const JARVIS_TTS_MUTE_SIGNAL = path.join(JARVIS_DAEMON_DIR, 'tts_mute.signal')
 ipcMain.on('hermes:jarvis:tts-mute', (_event, muted) => {
   try {
     if (muted) {
-      if (!fs.existsSync(JARVIS_TTS_ACTIVE_SIGNAL)) {
-        fs.writeFileSync(JARVIS_TTS_ACTIVE_SIGNAL, String(Date.now()))
+      if (!fs.existsSync(JARVIS_TTS_MUTE_SIGNAL)) {
+        fs.writeFileSync(JARVIS_TTS_MUTE_SIGNAL, String(Date.now()))
       }
     } else {
-      if (fs.existsSync(JARVIS_TTS_ACTIVE_SIGNAL)) {
-        fs.unlinkSync(JARVIS_TTS_ACTIVE_SIGNAL)
+      if (fs.existsSync(JARVIS_TTS_MUTE_SIGNAL)) {
+        fs.unlinkSync(JARVIS_TTS_MUTE_SIGNAL)
       }
     }
   } catch {
-    // Best-effort — the daemon has its own cooldown + raised threshold.
+    // Best-effort — the daemon also has its own cooldown.
   }
 })
 // Drag/resize: the overlay reports new absolute screen bounds (it already knows

@@ -72,31 +72,20 @@ AVAILABLE_MODELS = [
     "hey beethoven",
 ]
 
-# TTS active signal: while JARVIS is speaking, the desktop writes this file.
-# Instead of fully muting (which blocks barge-in), we RAISE the sensitivity
-# threshold so the user can still interrupt with a loud "ALEXA!" while the
-# quieter TTS voice coming through the speakers is ignored.
-TTS_ACTIVE_SIGNAL = Path(__file__).parent / "tts_active.signal"
-# Higher threshold during TTS playback (parlante echo guard).
-SENSITIVITY_DURING_TTS = max(SENSITIVITY + 0.3, 0.7)
+# Mute signal: while JARVIS is speaking, the desktop writes this file so the
+# daemon ignores ALL wake-word detections during playback. This prevents the
+# TTS voice AND any audio JARVIS plays (music, etc.) from triggering a false
+# wake. Full mute (not reduced sensitivity) because barge-in by voice doesn't
+# work with speakers anyway (acoustic echo).
+MUTE_SIGNAL_PATH = Path(__file__).parent / "tts_mute.signal"
 
 
-def is_tts_active() -> bool:
+def is_tts_muted() -> bool:
     """True while JARVIS is speaking — the desktop toggles this file."""
     try:
-        return TTS_ACTIVE_SIGNAL.exists()
+        return MUTE_SIGNAL_PATH.exists()
     except OSError:
         return False
-
-
-def current_sensitivity() -> float:
-    """Sensitivity depends on whether JARVIS is speaking.
-    Normal: user-set sensitivity (e.g. 0.4) — voice at normal volume triggers.
-    During TTS: higher sensitivity (e.g. 0.7) — only a loud 'ALEXA!' triggers,
-    so the TTS voice from the speakers doesn't auto-activate but the user can
-    still interrupt (barge-in).
-    """
-    return SENSITIVITY_DURING_TTS if is_tts_active() else SENSITIVITY
 
 
 
@@ -130,10 +119,10 @@ def signal_desktop() -> bool:
             pass
 
     if sent == 0:
-        print(f"[WAKE] ⚠️ No desktop client connected ({len(WS_CLIENTS)} in set) — start Hermes Desktop first.")
+        print(f"[WAKE] WARN: No desktop client connected ({len(WS_CLIENTS)} in set) — start Hermes Desktop first.")
         return False
 
-    print(f"[WAKE] ✅ Signal sent to {sent} desktop client(s).")
+    print(f"[WAKE] OK: Signal sent to {sent} desktop client(s).")
     return True
 
 
@@ -272,12 +261,11 @@ def main() -> int:
             print(f"  {model_name}: {score:.2f} {bar}", end="\r", flush=True)
 
         now = time.time()
-        # Dynamic sensitivity: during TTS playback the threshold is raised so
-        # the user can still barge-in with a loud "ALEXA!" while the quieter
-        # TTS voice from the speakers is ignored (acoustic echo guard without
-        # fully blocking the wake word).
-        threshold = current_sensitivity()
-        if score >= threshold and (now - last_detection) >= COOLDOWN:
+        # Skip ALL detection while JARVIS is speaking (TTS mute) so the agent's
+        # own voice AND any audio it plays (music, etc.) can't trigger a wake.
+        if is_tts_muted():
+            return
+        if score >= SENSITIVITY and (now - last_detection) >= COOLDOWN:
             last_detection = now
             if LOG:
                 print(f"\n[jarvis] DETECTED '{model_name}' (score={score:.2f})    ")

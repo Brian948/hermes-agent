@@ -278,28 +278,25 @@ export function useVoiceConversation({
       } catch (error) {
         notifyError(error, voiceCopy.playbackFailed)
       } finally {
-        if (enabledRef.current) {
-          pendingStartRef.current = true
-          setStatus('idle')
-          // JARVIS: force the listening loop to restart ~1.5s after the TTS
-          // ends, even if `busy` is still true (the backend sometimes lags a
-          // few seconds flipping busy off after a turn completes, which made
-          // the mic sit silent for ~5s before re-arming). 1.5s is short enough
-          // to feel instant and long enough to clear the TTS tail/echo.
-          if (turnTimeoutRef.current) {
-            window.clearTimeout(turnTimeoutRef.current)
-          }
-          turnTimeoutRef.current = window.setTimeout(() => {
-            if (enabledRef.current && !mutedRef.current && statusRef.current === 'idle') {
-              void startListening()
-            }
-          }, 1500)
-        } else {
-          setStatus('idle')
-        }
+        // JARVIS (estilo película): después de hablar, apagar el voice mode
+        // por completo. El micro se cierra y la UI se limpia (sin "...end").
+        // El usuario dice "Alexa" para reactivarlo (el wake bridge llama a
+        // requestVoiceToggle que lo vuelve a encender).
+        pendingStartRef.current = false
+        awaitingSpokenResponseRef.current = false
+        resetSpeechBuffer()
+        consumePendingResponse()
+        clearTurnTimeout()
+        stopVoicePlayback()
+        handle.cancel()
+        turnClosingRef.current = false
+        setMuted(false)
+        setStatus('idle')
+        // Signal the parent to turn voice mode OFF (clears the UI).
+        onFatalError?.()
       }
     },
-    [voiceCopy.playbackFailed, startListening]
+    [voiceCopy.playbackFailed]
   )
 
   const start = useCallback(async () => {
